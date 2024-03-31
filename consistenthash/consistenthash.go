@@ -98,6 +98,16 @@ func (c *Consistent) IsEmpty() bool {
 	return len(c.hosts) == 0
 }
 
+// Reset loads of all hosts to 0
+func (c *Consistent) ResetLoads() {
+	c.Lock()
+	defer c.Unlock()
+	for _, host := range c.loadMap {
+		host.Load = 0
+	}
+	c.totalLoad = 0
+}
+
 // Returns the host that owns `key`.
 //
 // As described in https://en.wikipedia.org/wiki/Consistent_hashing

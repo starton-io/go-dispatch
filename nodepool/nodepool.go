@@ -188,6 +188,13 @@ func (np *NodePool) waitingForHashRing() {
 	}
 }
 
+// Reset load of host to 0
+func (np *NodePool) ResetLoads() {
+	np.rwMut.RLock()
+	defer np.rwMut.RUnlock()
+	np.Nodes.ResetLoads()
+}
+
 // Remove deprecated function
 //func (np *NodePool) initHashRing(nodes []string) {
 //	np.rwMut.Lock()
