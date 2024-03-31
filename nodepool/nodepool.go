@@ -38,14 +38,12 @@ type NodePool struct {
 
 	Driver         driver.DriverV2
 	hashReplicas   int
+	hashLoad       float64
 	updateDuration time.Duration
 
 	logger   dlog.Logger
 	stopChan chan int
 	preNodes []string // sorted
-
-	// store hashmap of validate keys
-	keysMap map[string]string
 
 	capacityLoad bool
 
@@ -74,7 +72,7 @@ func NewNodePool(
 		Driver:         drv,
 		hashReplicas:   hashReplicas,
 		updateDuration: updateDuration,
-		keysMap:        make(map[string]string),
+		hashLoad:       consistenthash.DefaultLoad,
 		logger:         dlog.DefaultLogger(),
 		stopChan:       make(chan int, 1),
 	}
@@ -88,6 +86,12 @@ func NewNodePool(
 		opt(np)
 	}
 	return np
+}
+
+func WithHashLoad(load float64) Option {
+	return func(np *NodePool) {
+		np.hashLoad = load
+	}
 }
 
 func (np *NodePool) Start(ctx context.Context) (err error) {
@@ -133,58 +137,20 @@ func (np *NodePool) CheckJobAvailable(jobName string) (bool, error) {
 	var err error
 	if np.capacityLoad {
 		targetNode, err = np.Nodes.GetLeast(jobName)
+		if err != nil {
+			np.logger.Errorf("get least node error: %v", err)
+			return false, err
+		}
+		np.Nodes.Inc(targetNode)
 	} else {
 		targetNode, err = np.Nodes.Get(jobName)
-	}
-	if err != nil {
-		np.logger.Errorf("get node error: %v", err)
-		return false, err
-	}
-	if np.capacityLoad {
-		np.handleCapacityLoad(jobName, targetNode)
+		if err != nil {
+			np.logger.Errorf("get node error: %v", err)
+			return false, err
+		}
 	}
 	return np.nodeID == targetNode, nil
 }
-
-// Consider adding this method to handle capacity load logic separately
-func (np *NodePool) handleCapacityLoad(jobName, targetNode string) {
-	np.rwMut.Lock()
-	currentNode, ok := np.keysMap[jobName]
-	np.rwMut.Unlock()
-	if ok && currentNode != targetNode {
-		np.logger.Infof("job %s moved from %s to %s", jobName, currentNode, targetNode)
-		np.RemoveKey(jobName) // RemoveKey and AddKey manage their own locking
-		np.AddKey(jobName, targetNode)
-	} else if !ok {
-		np.logger.Infof("job %s is newly assigned to %s", jobName, targetNode)
-		np.AddKey(jobName, targetNode)
-	}
-}
-
-// Check if this job can be run in this node.
-//func (np *NodePool) CheckJobAvailable(jobName string) (bool, error) {
-//	np.rwMut.RLock()
-//	defer np.rwMut.RUnlock()
-//	if np.Nodes == nil {
-//		np.logger.Errorf("nodeID=%s, NodePool.nodes is nil", np.nodeID)
-//	}
-//	if np.Nodes.IsEmpty() {
-//		return false, nil
-//	}
-//	if np.state.Load().(string) != NodePoolStateSteady {
-//		return false, ErrNodePoolIsUpgrading
-//	}
-//	targetNode, err := np.Nodes.GetLeast(jobName)
-//	if err != nil {
-//		np.logger.Errorf("get least node error: %v", err)
-//		return false, err
-//	}
-//	np.Nodes.Inc(targetNode)
-//	if np.nodeID == targetNode {
-//		np.logger.Infof("job %s, running in node: %s, nodeID is %s", jobName, targetNode, np.nodeID)
-//	}
-//	return np.nodeID == targetNode, nil
-//}
 
 func (np *NodePool) Stop(ctx context.Context) error {
 	np.stopChan <- 1
@@ -195,25 +161,6 @@ func (np *NodePool) Stop(ctx context.Context) error {
 
 func (np *NodePool) GetNodeID() string {
 	return np.nodeID
-}
-
-func (np *NodePool) AddKey(key string, targetNode string) {
-	np.rwMut.Lock()
-	defer np.rwMut.Unlock()
-	if _, ok := np.keysMap[key]; !ok {
-		np.keysMap[key] = targetNode
-		np.Nodes.Inc(targetNode)
-	}
-}
-
-func (np *NodePool) RemoveKey(key string) {
-	np.rwMut.Lock()
-	defer np.rwMut.Unlock()
-
-	if _, ok := np.keysMap[key]; ok {
-		delete(np.keysMap, key)
-		np.Nodes.Done(np.GetNodeID())
-	}
 }
 
 func (np *NodePool) GetLastNodesUpdateTime() time.Time {
@@ -285,7 +232,7 @@ func (np *NodePool) updateHashRing(nodes []string) {
 
 	// Ensure the hash ring is initialized
 	if np.Nodes == nil {
-		np.Nodes = consistenthash.New(consistenthash.WithReplicas(np.hashReplicas))
+		np.Nodes = consistenthash.New(consistenthash.WithReplicas(np.hashReplicas), consistenthash.WithDefaultLoad(np.hashLoad))
 	}
 
 	// Sort the incoming list of nodes to ensure consistency in comparison
@@ -298,6 +245,11 @@ func (np *NodePool) updateHashRing(nodes []string) {
 		np.state.Store(NodePoolStateSteady)
 		return
 	}
+	// Update the state based on whether the node pool is in steady or upgrade state
+	np.state.Store(NodePoolStateUpgrade)
+
+	// Store the time of the last update
+	np.lastUpdateNodesTime.Store(time.Now())
 
 	// Identify nodes added or removed by comparing np.preNodes and nodes
 	addedNodes, removedNodes := diffNodes(np.preNodes, nodes)
@@ -318,11 +270,6 @@ func (np *NodePool) updateHashRing(nodes []string) {
 	np.preNodes = make([]string, len(nodes))
 	copy(np.preNodes, nodes)
 
-	// Update the state based on whether the node pool is in steady or upgrade state
-	np.state.Store(NodePoolStateUpgrade)
-
-	// Store the time of the last update
-	np.lastUpdateNodesTime.Store(time.Now())
 }
 
 // diffNodes compares two slices of node identifiers and returns the nodes that have been added or removed.

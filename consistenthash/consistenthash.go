@@ -11,7 +11,10 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
-const replicationFactor = 50
+const (
+	replicationFactor = 50
+	DefaultLoad       = 1.25
+)
 
 var ErrNoHosts = errors.New("no hosts added")
 
@@ -23,11 +26,12 @@ type Host struct {
 type Opt func(*Consistent)
 
 type Consistent struct {
-	hosts     map[uint64]string
-	sortedSet []uint64
-	loadMap   map[string]*Host
-	totalLoad int64
-	replicas  int
+	hosts       map[uint64]string
+	sortedSet   []uint64
+	loadMap     map[string]*Host
+	totalLoad   int64
+	replicas    int
+	defaultLoad float64
 
 	sync.RWMutex
 }
@@ -51,6 +55,16 @@ func WithReplicas(number int) Opt {
 	}
 }
 
+func WithDefaultLoad(load float64) Opt {
+	return func(c *Consistent) {
+		// If the load is less than 1.00, set it to the 1.00
+		if load < 1.00 {
+			c.defaultLoad = 1.00
+		}
+		c.defaultLoad = load
+	}
+}
+
 func (c *Consistent) Add(host string) {
 	c.Lock()
 	defer c.Unlock()
@@ -70,6 +84,12 @@ func (c *Consistent) Add(host string) {
 	sort.Slice(c.sortedSet, func(i int, j int) bool {
 		return c.sortedSet[i] < c.sortedSet[j]
 	})
+}
+
+func (c *Consistent) GetSortedSet() []uint64 {
+	copySortedSet := make([]uint64, len(c.sortedSet))
+	copy(copySortedSet, c.sortedSet)
+	return copySortedSet
 }
 
 func (c *Consistent) IsEmpty() bool {
@@ -103,6 +123,34 @@ func (c *Consistent) Get(key string) (string, error) {
 // to pick the least loaded host that can serve the key
 //
 // It returns ErrNoHosts if the ring has no hosts in it.
+//func (c *Consistent) GetLeastDeprecated(key string) (string, error) {
+//	c.RLock()
+//	defer c.RUnlock()
+//
+//	if len(c.hosts) == 0 {
+//		return "", ErrNoHosts
+//	}
+//
+//	h := c.hash(key)
+//	idx := c.search(h)
+//
+//	i := idx
+//	for {
+//		host, ok := c.hosts[c.sortedSet[i]]
+//		if !ok {
+//			return "", ErrNoHosts
+//		}
+//		if c.loadOK(host) {
+//			return host, nil
+//		}
+//		i++
+//		if i >= len(c.hosts) {
+//			i = 0
+//		}
+//	}
+//}
+
+// GetLeastv2 is an alternative implementation of GetLeast that is more efficient
 func (c *Consistent) GetLeast(key string) (string, error) {
 	c.RLock()
 	defer c.RUnlock()
@@ -114,20 +162,51 @@ func (c *Consistent) GetLeast(key string) (string, error) {
 	h := c.hash(key)
 	idx := c.search(h)
 
-	i := idx
+	leastLoadedHost := ""
+	leastLoad := int64(math.MaxInt64)
+	consideredHosts := make(map[string]struct{}) // Map to track considered hosts
+
+	// Initially assume no node can accept more load; track the least loaded node
 	for {
-		host, ok := c.hosts[c.sortedSet[i]]
-		if !ok {
-			return "", ErrNoHosts
+		// Wrap around the ring if necessary
+		if idx >= len(c.sortedSet) {
+			idx = 0
 		}
+		// If we've considered all unique hosts, stop the search
+		if len(consideredHosts) == len(c.loadMap) {
+			break
+		}
+
+		host, ok := c.hosts[c.sortedSet[idx]]
+		if !ok {
+			return "", ErrNoHosts // This should not happen, but just in case
+		}
+
+		// Skip if we've already considered this host
+		if _, alreadyConsidered := consideredHosts[host]; alreadyConsidered {
+			idx++
+			continue
+		}
+
+		consideredHosts[host] = struct{}{} // Mark this host as considered
+
+		hostLoad := c.loadMap[host].Load
+		// Update least loaded host if current host has lower load
+		if hostLoad < leastLoad {
+			leastLoadedHost = host
+			leastLoad = hostLoad
+		}
+
+		// Check if the current host can accept more load
 		if c.loadOK(host) {
 			return host, nil
 		}
-		i++
-		if i >= len(c.hosts) {
-			i = 0
-		}
+
+		idx++
 	}
+
+	// Return the least loaded host if all nodes are over the threshold
+	return leastLoadedHost, nil
 }
 
 func (c *Consistent) search(key uint64) int {
