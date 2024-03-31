@@ -133,35 +133,35 @@ func (c *Consistent) Get(key string) (string, error) {
 // to pick the least loaded host that can serve the key
 //
 // It returns ErrNoHosts if the ring has no hosts in it.
-//func (c *Consistent) GetLeastDeprecated(key string) (string, error) {
-//	c.RLock()
-//	defer c.RUnlock()
-//
-//	if len(c.hosts) == 0 {
-//		return "", ErrNoHosts
-//	}
-//
-//	h := c.hash(key)
-//	idx := c.search(h)
-//
-//	i := idx
-//	for {
-//		host, ok := c.hosts[c.sortedSet[i]]
-//		if !ok {
-//			return "", ErrNoHosts
-//		}
-//		if c.loadOK(host) {
-//			return host, nil
-//		}
-//		i++
-//		if i >= len(c.hosts) {
-//			i = 0
-//		}
-//	}
-//}
+func (c *Consistent) GetLeast(key string) (string, error) {
+	c.RLock()
+	defer c.RUnlock()
+
+	if len(c.hosts) == 0 {
+		return "", ErrNoHosts
+	}
+
+	h := c.hash(key)
+	idx := c.search(h)
+
+	i := idx
+	for {
+		host, ok := c.hosts[c.sortedSet[i]]
+		if !ok {
+			return "", ErrNoHosts
+		}
+		if c.loadOK(host) {
+			return host, nil
+		}
+		i++
+		if i >= len(c.hosts) {
+			i = 0
+		}
+	}
+}
 
 // GetLeastv2 is an alternative implementation of GetLeast that is more efficient
-func (c *Consistent) GetLeast(key string) (string, error) {
+func (c *Consistent) GetLeastv2wip(key string) (string, error) {
 	c.RLock()
 	defer c.RUnlock()
 
@@ -197,17 +197,21 @@ func (c *Consistent) GetLeast(key string) (string, error) {
 			idx++
 			continue
 		}
+		consideredHosts[host] = struct{}{}
 
-		consideredHosts[host] = struct{}{} // Mark this host as considered
+		hostInfo, ok := c.loadMap[host]
+		if !ok {
+			hostInfo = &Host{Name: host, Load: 0}
+		}
+		hostLoad := hostInfo.Load
 
-		hostLoad := c.loadMap[host].Load
 		// Update least loaded host if current host has lower load
 		if hostLoad < leastLoad {
 			leastLoadedHost = host
 			leastLoad = hostLoad
 		}
 
-		// Check if the current host can accept more load
+		// Check if the current host can accept
 		if c.loadOK(host) {
 			return host, nil
 		}
