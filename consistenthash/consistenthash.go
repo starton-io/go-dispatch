@@ -197,19 +197,23 @@ func (c *Consistent) GetLeast(key string) (string, error) {
 			idx++
 			continue
 		}
+		consideredHosts[host] = struct{}{}
 
-		consideredHosts[host] = struct{}{} // Mark this host as considered
+		// Check if the current host can accept more load before updating least loaded host
+		if c.loadOK(host) {
+			return host, nil
+		}
 
-		hostLoad := c.loadMap[host].Load
+		hostInfo, ok := c.loadMap[host]
+		if !ok {
+			hostInfo = &Host{Name: host, Load: 0}
+		}
+		hostLoad := hostInfo.Load
+
 		// Update least loaded host if current host has lower load
 		if hostLoad < leastLoad {
 			leastLoadedHost = host
 			leastLoad = hostLoad
-		}
-
-		// Check if the current host can accept more load
-		if c.loadOK(host) {
-			return host, nil
 		}
 
 		idx++
