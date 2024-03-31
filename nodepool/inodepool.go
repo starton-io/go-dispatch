@@ -16,7 +16,5 @@ type INodePool interface {
 	Stop(ctx context.Context) error
 
 	GetNodeID() string
-	AddKey(key string, targetNode string)
-	RemoveKey(key string)
 	GetLastNodesUpdateTime() time.Time
 }
