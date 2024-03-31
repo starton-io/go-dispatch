@@ -2,7 +2,6 @@ package nodepool
 
 import (
 	"context"
-	"reflect"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -245,21 +244,18 @@ func (np *NodePool) updateHashRing(nodes []string) {
 	// Sort the incoming list of nodes to ensure consistency in comparison
 	sort.Strings(nodes)
 
-	// Check if there's any change in the nodes list
-	if reflect.DeepEqual(np.preNodes, nodes) {
-		// No change in the nodes list, no need to update the hash ring
+	addedNodes, removedNodes := diffNodes(np.preNodes, nodes)
+	if len(addedNodes) == 0 && len(removedNodes) == 0 {
 		np.logger.Infof("nowNodes=%v, preNodes=%v", nodes, np.preNodes)
 		np.state.Store(NodePoolStateSteady)
 		return
 	}
+
 	// Update the state based on whether the node pool is in steady or upgrade state
 	np.state.Store(NodePoolStateUpgrade)
 
 	// Store the time of the last update
 	np.lastUpdateNodesTime.Store(time.Now())
-
-	// Identify nodes added or removed by comparing np.preNodes and nodes
-	addedNodes, removedNodes := diffNodes(np.preNodes, nodes)
 
 	// Remove nodes from the hash ring
 	for _, node := range removedNodes {
@@ -280,7 +276,7 @@ func (np *NodePool) updateHashRing(nodes []string) {
 }
 
 // diffNodes compares two slices of node identifiers and returns the nodes that have been added or removed.
-func diffNodes(oldNodes, newNodes []string) (added, removed []string) {
+func diffNodes(currentNodes, newNodes []string) (added, removed []string) {
 	nodeCount := make(map[string]int)
 
 	// Increment count for new nodes
@@ -288,8 +284,8 @@ func diffNodes(oldNodes, newNodes []string) (added, removed []string) {
 		nodeCount[node]++
 	}
 
-	// Decrement count for old nodes
-	for _, node := range oldNodes {
+	// Decrement count for current nodes
+	for _, node := range currentNodes {
 		nodeCount[node]--
 	}
 
