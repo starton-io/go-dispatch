@@ -41,7 +41,7 @@ func main() {
     fmt.Println("Node for key 'myKey' by using the least loaded node:", node)
 
 	// Use inc to increase the load of a node
-	ch.Inc(node)
+    ch.Inc(node)
 
     // Example of removing a node from the hash ring.
     ch.Remove("Node2")

@@ -81,7 +81,7 @@ func main() {
     }
 
     // Check if a job is available to run on this node
-    available, err := np.CheckJobAvailable("job1")
+    available, err := np.IsEligible("job1")
     if err != nil {
         fmt.Printf("Error checking job availability: %v\n", err)
         return

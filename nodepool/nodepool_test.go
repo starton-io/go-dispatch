@@ -60,7 +60,7 @@ func (ts *TestINodePoolSuite) declareRedisZSetDrivers(clients *[]*redis.Client, 
 	}
 }
 
-func (ts *TestINodePoolSuite) runCheckJobAvailable(numberOfNodes int, ServiceName string, nodePools *[]nodepool.INodePool, updateDuration time.Duration) {
+func (ts *TestINodePoolSuite) runIsEligible(numberOfNodes int, ServiceName string, nodePools *[]nodepool.INodePool, updateDuration time.Duration) {
 	for i := 0; i < numberOfNodes; i++ {
 		err := (*nodePools)[i].Start(context.Background())
 		ts.Require().Nil(err)
@@ -75,7 +75,7 @@ func (ts *TestINodePoolSuite) runCheckJobAvailable(numberOfNodes int, ServiceNam
 		for j := 0; j < numberOfNodes; j++ {
 			nodeID, _ := ring.Get(strconv.Itoa(i))
 			ts.T().Logf("nodeID=%s, jobID=%d, nodePool=%d", nodeID, i, j)
-			ok, err := (*nodePools)[j].CheckJobAvailable(strconv.Itoa(i))
+			ok, err := (*nodePools)[j].IsEligible(strconv.Itoa(i))
 			ts.Require().Nil(err)
 			ts.Require().Equal(
 				ok,
@@ -99,7 +99,7 @@ func (ts *TestINodePoolSuite) TestMultiNodesRedis() {
 	for i := 0; i < numberOfNodes; i++ {
 		nodePools = append(nodePools, nodepool.NewNodePool(ServiceName, drivers[i], updateDuration, ts.defaultHashReplicas, nil))
 	}
-	ts.runCheckJobAvailable(numberOfNodes, ServiceName, &nodePools, updateDuration)
+	ts.runIsEligible(numberOfNodes, ServiceName, &nodePools, updateDuration)
 	ts.stopAllNodePools(nodePools)
 }
 
@@ -118,7 +118,7 @@ func (ts *TestINodePoolSuite) TestMultiNodesRedisZSet() {
 	for i := 0; i < numberOfNodes; i++ {
 		nodePools = append(nodePools, nodepool.NewNodePool(ServiceName, drivers[i], updateDuration, ts.defaultHashReplicas, nil))
 	}
-	ts.runCheckJobAvailable(numberOfNodes, ServiceName, &nodePools, updateDuration)
+	ts.runIsEligible(numberOfNodes, ServiceName, &nodePools, updateDuration)
 	ts.stopAllNodePools(nodePools)
 }
 
