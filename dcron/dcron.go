@@ -141,7 +141,7 @@ func (d *Dcron) List() map[string]*JobWarpper {
 }
 
 func (d *Dcron) allowThisNodeRun(jobName string) (ok bool) {
-	ok, err := d.nodePool.CheckJobAvailable(jobName)
+	ok, err := d.nodePool.IsEligible(jobName)
 	if err != nil {
 		d.logger.Errorf("allow this node run error, err=%v", err)
 		ok = false
@@ -221,7 +221,7 @@ func (d *Dcron) reRunRecentJobs(jobNames []string) {
 	d.logger.Infof("reRunRecentJobs: length=%d", len(jobNames))
 	for _, jobName := range jobNames {
 		if job, ok := d.jobs[jobName]; ok {
-			if ok, _ := d.nodePool.CheckJobAvailable(jobName); ok {
+			if ok, _ := d.nodePool.IsEligible(jobName); ok {
 				job.Execute()
 			}
 		}

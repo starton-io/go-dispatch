@@ -118,36 +118,38 @@ func (np *NodePool) Start(ctx context.Context) (err error) {
 	return
 }
 
-func (np *NodePool) CheckJobAvailable(jobName string) (bool, error) {
+func (np *NodePool) GetHost(key string) (string, error) {
+	if np.Nodes == nil {
+		np.logger.Errorf("nodeID=%s, NodePool.nodes is nil", np.nodeID)
+		return "", nil // Consider returning an error indicating that the nodes are nil
+	}
+	if np.Nodes.IsEmpty() {
+		return "", nil
+	}
+	if np.state.Load().(string) != NodePoolStateSteady {
+		return "", ErrNodePoolIsUpgrading
+	}
+	if np.capacityLoad {
+		np.logger.Debugf("get least node for key=%s", key)
+		if targetNode, err := np.Nodes.GetLeast(key); err != nil {
+			return "", err
+		} else {
+			return targetNode, nil
+		}
+	}
+	return np.Nodes.Get(key)
+}
+
+func (np *NodePool) IsEligible(key string) (bool, error) {
 	np.rwMut.RLock()
 	defer np.rwMut.RUnlock()
 
-	if np.Nodes == nil {
-		np.logger.Errorf("nodeID=%s, NodePool.nodes is nil", np.nodeID)
-		return false, nil // Consider returning an error indicating that the nodes are nil
+	targetNode, err := np.GetHost(key)
+	if err != nil {
+		return false, err
 	}
-	if np.Nodes.IsEmpty() {
-		return false, nil
-	}
-	if np.state.Load().(string) != NodePoolStateSteady {
-		return false, ErrNodePoolIsUpgrading
-	}
-	var targetNode string
-	var err error
-	if np.capacityLoad {
-		targetNode, err = np.Nodes.GetLeast(jobName)
-		if err != nil {
-			np.logger.Errorf("get least node error: %v", err)
-			return false, err
-		}
-		np.Nodes.Inc(targetNode)
-	} else {
-		targetNode, err = np.Nodes.Get(jobName)
-		if err != nil {
-			np.logger.Errorf("get node error: %v", err)
-			return false, err
-		}
-	}
+	np.Nodes.Inc(targetNode)
+	np.logger.Debugf("IsEligible: nodeID=%s, targetNode=%s", np.nodeID, targetNode)
 	return np.nodeID == targetNode, nil
 }
 
@@ -160,6 +162,21 @@ func (np *NodePool) Stop(ctx context.Context) error {
 
 func (np *NodePool) GetNodeID() string {
 	return np.nodeID
+}
+
+func (np *NodePool) DecreaseLoadByKey(key string) error {
+	np.rwMut.RLock()
+	defer np.rwMut.RUnlock()
+	if !np.capacityLoad {
+		return nil
+	}
+
+	targetHost, err := np.GetHost(key)
+	if err != nil {
+		return err
+	}
+	np.Nodes.Done(targetHost)
+	return nil
 }
 
 func (np *NodePool) GetLastNodesUpdateTime() time.Time {
@@ -254,9 +271,6 @@ func (np *NodePool) updateHashRing(nodes []string) {
 	// Update the state based on whether the node pool is in steady or upgrade state
 	np.state.Store(NodePoolStateUpgrade)
 
-	// Store the time of the last update
-	np.lastUpdateNodesTime.Store(time.Now())
-
 	// Remove nodes from the hash ring
 	for _, node := range removedNodes {
 		np.Nodes.Remove(node)
@@ -272,6 +286,9 @@ func (np *NodePool) updateHashRing(nodes []string) {
 	// Update the preNodes list to reflect the current state
 	np.preNodes = make([]string, len(nodes))
 	copy(np.preNodes, nodes)
+
+	// Store the time of the last update
+	np.lastUpdateNodesTime.Store(time.Now())
 
 }
 
