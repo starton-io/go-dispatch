@@ -18,6 +18,7 @@ type Cron struct {
 	stop      chan struct{}
 	add       chan *Entry
 	remove    chan EntryID
+	reset     chan struct{}
 	snapshot  chan chan []Entry
 	running   bool
 	logger    dlog.Logger
@@ -175,6 +176,16 @@ func (c *Cron) Schedule(schedule Schedule, cmd Job) EntryID {
 	return entry.ID
 }
 
+func (c *Cron) ResetEntries() {
+	c.runningMu.Lock()
+	defer c.runningMu.Unlock()
+	if c.running {
+		c.reset <- struct{}{}
+		return
+	}
+	c.entries = make([]*Entry, 0)
+}
+
 // Entries returns a snapshot of the cron entries.
 func (c *Cron) Entries() []Entry {
 	c.runningMu.Lock()
@@ -293,7 +304,11 @@ func (c *Cron) run() {
 				timer.Stop()
 				c.logger.Infof("stop")
 				return
-
+			case <-c.reset:
+				timer.Stop()
+				now = c.now()
+				c.entries = make([]*Entry, 0)
+				c.logger.Infof("reset jobs")
 			case id := <-c.remove:
 				timer.Stop()
 				now = c.now()
