@@ -217,6 +217,14 @@ func (d *Dcron) Stop() {
 	}
 }
 
+func (d *Dcron) CleanJobs() {
+	d.jobsRWMut.Lock()
+	defer d.jobsRWMut.Unlock()
+
+	d.jobs = make(map[string]*JobWarpper)
+	d.cr.ResetEntries()
+}
+
 func (d *Dcron) reRunRecentJobs(jobNames []string) {
 	d.logger.Infof("reRunRecentJobs: length=%d", len(jobNames))
 	for _, jobName := range jobNames {
