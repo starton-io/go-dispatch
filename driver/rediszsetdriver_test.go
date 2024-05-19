@@ -53,7 +53,7 @@ func TestRedisZSetDriver_Stop(t *testing.T) {
 	drv1 := testFuncNewRedisZSetDriver(rds.Addr())
 	drv1.Init(t.Name(),
 		driver.NewTimeoutOption(5*time.Second),
-		driver.NewGlobalPrefixOption("distributed-cron"),
+		driver.NewGlobalPrefixOption("distributed-nodepool"),
 		driver.NewLoggerOption(dlog.NewZapLoggerForTest(t)))
 
 	drv2 := testFuncNewRedisZSetDriver(rds.Addr())

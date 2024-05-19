@@ -7,7 +7,7 @@ import (
 )
 
 // GlobalKeyPrefix is a global redis key prefix
-const DefaultGlobalKeyPrefix = "distributed-cron:"
+const DefaultGlobalKeyPrefix = "distributed-nodepool:"
 
 func GetKeyPre(globalKeyPrefix, serviceName string) string {
 	return globalKeyPrefix + serviceName + ":"

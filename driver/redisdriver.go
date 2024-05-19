@@ -117,7 +117,7 @@ func (rd *RedisDriver) registerServiceNode() error {
 		return err
 	}
 	// If the key does not exist, use GetNodeId to generate a new nodeID
-	if exists == 0 {
+	if rd.nodeID == "" || exists == 0 {
 		rd.nodeID = GetNodeId(rd.GlobalKeyPrefix, rd.serviceName)
 	}
 	return rd.Client.SetEx(context.Background(), rd.nodeID, rd.nodeID, rd.timeout).Err()
