@@ -34,6 +34,12 @@ func WithHashReplicas(d int) Option {
 	}
 }
 
+func WithCapacityLoad() Option {
+	return func(dcron *Dcron) {
+		dcron.capacityLoad = true
+	}
+}
+
 // CronOptionLocation is warp cron with location
 func CronOptionLocation(loc *time.Location) Option {
 	return func(dcron *Dcron) {

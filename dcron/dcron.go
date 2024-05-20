@@ -32,13 +32,14 @@ type Dcron struct {
 	jobsRWMut sync.Mutex
 
 	ServerName string
-	nodePool   nodepool.INodePool
+	NodePool   nodepool.INodePool
 	running    int32
 
 	logger dlog.Logger
 
 	nodeUpdateDuration time.Duration
 	hashReplicas       int
+	capacityLoad       bool
 
 	cr        *cron.Cron
 	crOptions []cron.Option
@@ -55,7 +56,7 @@ func NewDcron(serverName string, driver driver.DriverV2, cronOpts ...cron.Option
 	dcron.crOptions = cronOpts
 	dcron.cr = cron.New(cronOpts...)
 	dcron.running = dcronStopped
-	dcron.nodePool = nodepool.NewNodePool(serverName, driver, dcron.nodeUpdateDuration, dcron.hashReplicas, dcron.logger)
+	dcron.NodePool = nodepool.NewNodePool(serverName, driver, dcron.nodeUpdateDuration, dcron.hashReplicas, dcron.logger)
 	return dcron
 }
 
@@ -65,9 +66,12 @@ func NewDcronWithOption(serverName string, driver driver.DriverV2, dcronOpts ...
 	for _, opt := range dcronOpts {
 		opt(dcron)
 	}
-
 	dcron.cr = cron.New(dcron.crOptions...)
-	dcron.nodePool = nodepool.NewNodePool(serverName, driver, dcron.nodeUpdateDuration, dcron.hashReplicas, dcron.logger)
+	nodepoolOpts := []nodepool.Option{}
+	if dcron.capacityLoad {
+		nodepoolOpts = append(nodepoolOpts, nodepool.WithCapacityLoad())
+	}
+	dcron.NodePool = nodepool.NewNodePool(serverName, driver, dcron.nodeUpdateDuration, dcron.hashReplicas, dcron.logger, nodepoolOpts...)
 	return dcron
 }
 
@@ -141,7 +145,7 @@ func (d *Dcron) List() map[string]*JobWarpper {
 }
 
 func (d *Dcron) allowThisNodeRun(jobName string) (ok bool) {
-	ok, err := d.nodePool.IsEligible(jobName)
+	ok, err := d.NodePool.IsEligible(jobName)
 	if err != nil {
 		d.logger.Errorf("allow this node run error, err=%v", err)
 		ok = false
@@ -172,7 +176,7 @@ func (d *Dcron) Start() {
 			return
 		}
 		d.cr.Start()
-		d.logger.Infof("dcron started, nodeID is %s", d.nodePool.GetNodeID())
+		d.logger.Infof("dcron started, nodeID is %s", d.NodePool.GetNodeID())
 	} else {
 		d.logger.Infof("dcron have started")
 	}
@@ -189,7 +193,7 @@ func (d *Dcron) Run() {
 			atomic.StoreInt32(&d.running, dcronStopped)
 			return
 		}
-		d.logger.Infof("dcron running, nodeID is %s", d.nodePool.GetNodeID())
+		d.logger.Infof("dcron running, nodeID is %s", d.NodePool.GetNodeID())
 		d.cr.Run()
 	} else {
 		d.logger.Infof("dcron already running")
@@ -197,7 +201,7 @@ func (d *Dcron) Run() {
 }
 
 func (d *Dcron) startNodePool() error {
-	if err := d.nodePool.Start(context.Background()); err != nil {
+	if err := d.NodePool.Start(context.Background()); err != nil {
 		d.logger.Errorf("dcron start node pool error %+v", err)
 		return err
 	}
@@ -207,7 +211,7 @@ func (d *Dcron) startNodePool() error {
 // Stop job
 func (d *Dcron) Stop() {
 	tick := time.NewTicker(time.Millisecond)
-	d.nodePool.Stop(context.Background())
+	d.NodePool.Stop(context.Background())
 	for range tick.C {
 		if atomic.CompareAndSwapInt32(&d.running, dcronRunning, dcronStopped) {
 			d.cr.Stop()
@@ -229,7 +233,7 @@ func (d *Dcron) reRunRecentJobs(jobNames []string) {
 	d.logger.Infof("reRunRecentJobs: length=%d", len(jobNames))
 	for _, jobName := range jobNames {
 		if job, ok := d.jobs[jobName]; ok {
-			if ok, _ := d.nodePool.IsEligible(jobName); ok {
+			if ok, _ := d.NodePool.IsEligible(jobName); ok {
 				job.Execute()
 			}
 		}
@@ -237,5 +241,5 @@ func (d *Dcron) reRunRecentJobs(jobNames []string) {
 }
 
 func (d *Dcron) NodeID() string {
-	return d.nodePool.GetNodeID()
+	return d.NodePool.GetNodeID()
 }
