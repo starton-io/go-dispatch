@@ -101,6 +101,10 @@ func (d *Dcron) AddJob(jobName, cronStr string, job Job) (err error) {
 	return d.addJob(jobName, cronStr, job)
 }
 
+func (d *Dcron) IsLoadCapacityEnabled() bool {
+	return d.capacityLoad
+}
+
 // AddFunc add a cron func
 func (d *Dcron) AddFunc(jobName, cronStr string, cmd func()) (err error) {
 	return d.addJob(jobName, cronStr, cron.FuncJob(cmd))
