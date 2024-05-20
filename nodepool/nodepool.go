@@ -148,7 +148,9 @@ func (np *NodePool) IsEligible(key string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	np.Nodes.Inc(targetNode)
+	if np.capacityLoad {
+		np.Nodes.Inc(targetNode)
+	}
 	np.logger.Debugf("IsEligible: nodeID=%s, targetNode=%s", np.nodeID, targetNode)
 	return np.nodeID == targetNode, nil
 }

@@ -28,7 +28,7 @@ type JobWarpper struct {
 
 // Run is run job
 func (job JobWarpper) Run() {
-	if job.Dcron.allowThisNodeRun(job.Name) {
+	if job.Dcron.IsLoadCapacityEnabled() || job.Dcron.allowThisNodeRun(job.Name) {
 		job.Execute()
 	}
 }
