@@ -16,7 +16,7 @@ const (
 )
 
 type RedisDriver struct {
-	Client          *redis.Client
+	UniversalClient redis.UniversalClient
 	GlobalKeyPrefix string
 
 	serviceName string
@@ -33,9 +33,9 @@ type RedisDriver struct {
 	sync.Mutex
 }
 
-func newRedisDriver(redisClient *redis.Client) *RedisDriver {
+func newRedisUniversalDriver(redisClient redis.UniversalClient) *RedisDriver {
 	rd := &RedisDriver{
-		Client:          redisClient,
+		UniversalClient: redisClient,
 		GlobalKeyPrefix: DefaultGlobalKeyPrefix,
 		logger:          dlog.DefaultLogger(),
 		timeout:         redisDefaultTimeout,
@@ -102,7 +102,7 @@ func (rd *RedisDriver) heartBeat() {
 			}
 		case <-rd.runtimeCtx.Done():
 			{
-				if err := rd.Client.Del(context.Background(), rd.nodeID, rd.nodeID).Err(); err != nil {
+				if err := rd.UniversalClient.Del(context.Background(), rd.nodeID).Err(); err != nil {
 					rd.logger.Errorf("unregister service node error %+v", err)
 				}
 				return
@@ -112,7 +112,7 @@ func (rd *RedisDriver) heartBeat() {
 }
 
 func (rd *RedisDriver) registerServiceNode() error {
-	exists, err := rd.Client.Exists(context.Background(), rd.nodeID).Result()
+	exists, err := rd.UniversalClient.Exists(context.Background(), rd.nodeID).Result()
 	if err != nil {
 		return err
 	}
@@ -120,12 +120,12 @@ func (rd *RedisDriver) registerServiceNode() error {
 	if rd.nodeID == "" || exists == 0 {
 		rd.nodeID = GetNodeId(rd.GlobalKeyPrefix, rd.serviceName)
 	}
-	return rd.Client.SetEx(context.Background(), rd.nodeID, rd.nodeID, rd.timeout).Err()
+	return rd.UniversalClient.SetEx(context.Background(), rd.nodeID, rd.nodeID, rd.timeout).Err()
 }
 
 func (rd *RedisDriver) scan(ctx context.Context, matchStr string) ([]string, error) {
 	ret := make([]string, 0)
-	iter := rd.Client.Scan(ctx, 0, matchStr, -1).Iterator()
+	iter := rd.UniversalClient.Scan(ctx, 0, matchStr, -1).Iterator()
 	for iter.Next(ctx) {
 		err := iter.Err()
 		if err != nil {
