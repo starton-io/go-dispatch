@@ -29,8 +29,8 @@ type DriverV2 interface {
 	withOption(opt Option) (err error)
 }
 
-func NewRedisDriver(redisClient *redis.Client) DriverV2 {
-	return newRedisDriver(redisClient)
+func NewRedisDriver(redisClient redis.UniversalClient) DriverV2 {
+	return newRedisUniversalDriver(redisClient)
 }
 
 func NewRedisZSetDriver(redisClient *redis.Client) DriverV2 {
